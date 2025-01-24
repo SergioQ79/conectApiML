@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+# <html lang="en">
+# <head>
+#     <meta charset="UTF-8">
+#     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+#     <title>Resultados de Búsqueda</title>
+# </head>
+# <body>
+#     <h1>Resultados para "{{ keyword }}"</h1>
+#     {% if images %}
+#         <ul>
+#         {% for image in images %}
+#             <li><img src="{{ image }}" alt="{{ keyword }}" style="max-width:300px;"></li>
+#         {% endfor %}
+#         </ul>
+#     {% else %}
+#         <p>No se encontraron imágenes.</p>
+#     {% endif %}
+#     <a href="/">Nueva búsqueda</a>
+# </body>
+# </html>
