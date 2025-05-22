@@ -48,22 +48,21 @@ def callback():
 
     access_token = token_response.json().get("access_token")
 
-    # Consultar métricas de ventas (abril 2024 como ejemplo)
-    metric_response = requests.get(
-        "https://api.mercadolibre.com/seller/metrics/search",
-        headers={"Authorization": f"Bearer {access_token}"},
-        params={
-            "metric_type": "sales",
-            "date_from": "2024-04-01",
-            "date_to": "2024-04-30"
-        }
+    # CONSULTA DE PRUEBA: datos del usuario autenticado
+    user_response = requests.get(
+        "https://api.mercadolibre.com/users/me",
+        headers={"Authorization": f"Bearer {access_token}"}
     )
 
-    if metric_response.status_code != 200:
-        return f"❌ Error al obtener métricas:<br>{metric_response.text}", 500
+    if user_response.status_code != 200:
+        return f"❌ Error al obtener datos de usuario:<br>{user_response.text}", 500
 
-    metrics = metric_response.json()
-    return render_template("result.html", metrics=metrics)
+    user = user_response.json()
+    return f"""
+    ✅ Bienvenido, <strong>{user.get('nickname')}</strong><br>
+    ID de usuario: {user.get('id')}<br>
+    Tipo de cuenta: {user.get('user_type')}
+    """
 
 # Recomendado para test local
 if __name__ == '__main__':
