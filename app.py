@@ -1,12 +1,12 @@
 import os
 import requests
-from flask import Flask, request, render_template_string
+from flask import Flask, request, render_template
 from dotenv import load_dotenv
 
-# Cargar variables desde .env (para local)
+# Cargar variables desde .env
 load_dotenv()
 
-# Configuración desde entorno
+# Leer configuración desde entorno
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
@@ -16,12 +16,12 @@ app = Flask(__name__)
 @app.route('/')
 def index():
     auth_url = (
-        "https://auth.mercadolibre.com.ar/authorization"
+        f"https://auth.mercadolibre.com.ar/authorization"
         f"?response_type=code"
         f"&client_id={CLIENT_ID}"
         f"&redirect_uri={REDIRECT_URI}"
     )
-    return f'<a href="{auth_url}">🔐 Autorizar con Mercado Libre</a>'
+    return render_template("index.html", auth_url=auth_url)
 
 @app.route('/callback')
 def callback():
@@ -46,32 +46,54 @@ def callback():
 
     access_token = token_response.json().get("access_token")
 
-    # Consultar info del usuario
-    user_response = requests.get(
-        "https://api.mercadolibre.com/users/me",
-        headers={"Authorization": f"Bearer {access_token}"}
-    )
+    headers = {"Authorization": f"Bearer {access_token}"}
 
+    # Obtener datos del usuario
+    user_response = requests.get("https://api.mercadolibre.com/users/me", headers=headers)
     if user_response.status_code != 200:
-        return f"❌ Error al obtener datos de usuario:<br>{user_response.text}", 500
-
+        return f"❌ Error al obtener datos del usuario:<br>{user_response.text}", 500
     user = user_response.json()
-    address = user.get("address", {})
-    reputation = user.get("seller_reputation", {})
-    registration = user.get("registration_date", "")[:10]  # solo YYYY-MM-DD
 
-    # Renderizar resumen con HTML simple
-    return render_template_string(f"""
-        <h2>✅ Bienvenido, <strong>{user.get('nickname')}</strong></h2>
-        <ul>
-            <li><strong>ID de usuario:</strong> {user.get('id')}</li>
-            <li><strong>Tipo de cuenta:</strong> {user.get('user_type')}</li>
-            <li><strong>Fecha de registro:</strong> {registration}</li>
-            <li><strong>Ubicación:</strong> {address.get('city', '')}, {address.get('state', '')}</li>
-            <li><strong>Sitio:</strong> {user.get('site_id')}</li>
-            <li><strong>Reputación:</strong> {reputation.get('level_id', 'Sin actividad')}</li>
-        </ul>
-    """)
+    # Obtener direcciones
+    addresses_response = requests.get(f"https://api.mercadolibre.com/users/{user['id']}/addresses", headers=headers)
+    addresses = addresses_response.json() if addresses_response.status_code == 200 else []
+
+    # Obtener teléfonos
+    phones_response = requests.get(f"https://api.mercadolibre.com/users/{user['id']}/phones", headers=headers)
+    phones = phones_response.json() if phones_response.status_code == 200 else {}
+
+    # Obtener publicaciones
+    items_response = requests.get(f"https://api.mercadolibre.com/users/{user['id']}/items/search", headers=headers)
+    items = items_response.json().get("results", []) if items_response.status_code == 200 else []
+
+    # Mostrar todo en HTML simple
+    html = f"""
+    ✅ Bienvenido, <strong>{user.get('nickname')}</strong><br>
+    ID de usuario: {user.get('id')}<br>
+    Tipo de cuenta: {user.get('user_type')}<br><br>
+
+    <strong>📍 Direcciones:</strong><br>
+    """
+    if addresses:
+        for addr in addresses:
+            html += f"- {addr.get('address_line', 'Sin dirección completa')} ({addr.get('city', {}).get('name', '')})<br>"
+    else:
+        html += "Sin direcciones registradas.<br>"
+
+    html += "<br><strong>📞 Teléfonos:</strong><br>"
+    if phones:
+        html += f"Número: {phones.get('area_code', '')}-{phones.get('number', '')}<br>"
+    else:
+        html += "Sin teléfonos registrados.<br>"
+
+    html += "<br><strong>📦 Publicaciones activas:</strong><br>"
+    if items:
+        for item in items:
+            html += f"- ID publicación: {item}<br>"
+    else:
+        html += "No tenés publicaciones activas.<br>"
+
+    return html
 
 if __name__ == '__main__':
     app.run(debug=True)
