@@ -69,7 +69,7 @@ def index():
     )
     return render_template("index.html", auth_url=auth_url)
 
-@app.route('/callback')
+@app.route("/callback")
 def callback():
     code = request.args.get('code')
     if not code:
@@ -91,10 +91,24 @@ def callback():
         return f"❌ Error al obtener token:<br>{token_response.text}", 500
 
     tokens = token_response.json()
-    guardar_tokens(tokens)
     access_token = tokens.get("access_token")
+    refresh_token = tokens.get("refresh_token")
 
-    return f"✅ Autenticación exitosa. Token guardado.<br><a href='/perfil'>Ver perfil</a>"
+    # Mostramos los tokens en pantalla para copiarlos
+    return f"""
+    ✅ <strong>Autenticación exitosa</strong><br><br>
+    🔐 <strong>ACCESS_TOKEN:</strong><br>
+    <code>{access_token}</code><br><br>
+    ♻️ <strong>REFRESH_TOKEN:</strong><br>
+    <code>{refresh_token}</code><br><br>
+    👉 Copiá estos valores y agregalos como variables de entorno en Render:<br>
+    <ul>
+        <li><code>ACCESS_TOKEN</code></li>
+        <li><code>REFRESH_TOKEN</code></li>
+    </ul>
+    ⚠️ Una vez hecho eso, reiniciá la app en Render y podés ingresar normalmente a <a href='/perfil'>/perfil</a>.
+    """
+
 
 @app.route('/perfil')
 def perfil():
@@ -134,3 +148,4 @@ def perfil():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
