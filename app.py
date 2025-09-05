@@ -1,5 +1,4 @@
 import os
-import json
 import requests
 from flask import Flask, request, render_template
 from dotenv import load_dotenv
@@ -12,7 +11,10 @@ load_dotenv()
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
-TOKEN_FILE = "tokens.json"
+
+# En Render: seteá estos manualmente después de autorizar
+ACCESS_TOKEN_ENV = os.getenv("ACCESS_TOKEN")
+REFRESH_TOKEN_ENV = os.getenv("REFRESH_TOKEN")
 
 app = Flask(__name__)
 
@@ -20,43 +22,43 @@ app = Flask(__name__)
 # Funciones auxiliares
 # ==========================
 
-def guardar_tokens(tokens):
-    with open(TOKEN_FILE, "w") as f:
-        json.dump(tokens, f)
+def renovar_token():
+    """
+    Intenta renovar el ACCESS_TOKEN usando el REFRESH_TOKEN
+    """
+    if not REFRESH_TOKEN_ENV:
+        print("⚠️ REFRESH_TOKEN no definido en entorno.")
+        return None
 
-def cargar_tokens():
-    if os.path.exists(TOKEN_FILE):
-        with open(TOKEN_FILE, "r") as f:
-            return json.load(f)
-    return None
-
-def obtener_token_desde_refresh(refresh_token):
-    print("🔄 Renovando access_token con refresh_token...")
     response = requests.post(
         "https://api.mercadolibre.com/oauth/token",
         data={
             "grant_type": "refresh_token",
             "client_id": CLIENT_ID,
             "client_secret": CLIENT_SECRET,
-            "refresh_token": refresh_token
+            "refresh_token": REFRESH_TOKEN_ENV
         }
     )
-    if response.status_code == 200:
-        nuevos_tokens = response.json()
-        guardar_tokens(nuevos_tokens)
-        return nuevos_tokens.get("access_token")
-    else:
-        print("❌ Error al renovar token:", response.text)
+
+    if response.status_code != 200:
+        print("❌ Error al renovar el token:", response.text)
         return None
 
+    nuevos_tokens = response.json()
+    print("✅ Token renovado exitosamente.")
+    return nuevos_tokens.get("access_token")
+
+
 def obtener_access_token():
-    tokens = cargar_tokens()
-    if tokens:
-        return obtener_token_desde_refresh(tokens.get("refresh_token"))
-    return None
+    """
+    Devuelve un token válido. Primero intenta renovar, si falla usa el fijo de entorno.
+    """
+    nuevo = renovar_token()
+    return nuevo or ACCESS_TOKEN_ENV
+
 
 # ==========================
-# Rutas de la aplicación
+# Rutas
 # ==========================
 
 @app.route('/')
@@ -69,13 +71,13 @@ def index():
     )
     return render_template("index.html", auth_url=auth_url)
 
+
 @app.route("/callback")
 def callback():
     code = request.args.get('code')
     if not code:
         return "❌ No se recibió código de autorización", 400
 
-    # Obtener access_token y refresh_token
     token_response = requests.post(
         "https://api.mercadolibre.com/oauth/token",
         data={
@@ -94,7 +96,6 @@ def callback():
     access_token = tokens.get("access_token")
     refresh_token = tokens.get("refresh_token")
 
-    # Mostramos los tokens en pantalla para copiarlos
     return f"""
     ✅ <strong>Autenticación exitosa</strong><br><br>
     🔐 <strong>ACCESS_TOKEN:</strong><br>
@@ -114,7 +115,7 @@ def callback():
 def perfil():
     access_token = obtener_access_token()
     if not access_token:
-        return "❌ No se pudo obtener token válido.", 401
+        return "❌ No se pudo obtener un token válido.", 401
 
     headers = {"Authorization": f"Bearer {access_token}"}
 
@@ -142,10 +143,9 @@ def perfil():
 
     return html
 
-# ==========================
-# Ejecutar la app
-# ==========================
 
+# ==========================
+# Ejecutar app localmente
+# ==========================
 if __name__ == '__main__':
     app.run(debug=True)
-
