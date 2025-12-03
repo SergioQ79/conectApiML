@@ -150,6 +150,103 @@ def perfil():
     return html
 
 
+@app.route('/buscar_items')
+def buscar_items():
+    """
+    Busca ítems de la cuenta conectada que coincidan con un criterio 'q'
+    y muestra hasta los primeros 10 con título, precio y link.
+    """
+    criterio = request.args.get('q', '').strip()
+
+    # Si no hay criterio, muestro un formulario simple
+    if not criterio:
+        return """
+        <h2>Buscar items en Mercado Libre</h2>
+        <form method="get" action="/buscar_items">
+            <label>Texto a buscar (en título, etc.):</label><br>
+            <input type="text" name="q" placeholder="Ej: filtro aceite, batería, etc.">
+            <button type="submit">Buscar</button>
+        </form>
+        <br>
+        <a href="/perfil">Volver a /perfil</a>
+        """
+
+    access_token = obtener_access_token()
+    if not access_token:
+        return ("❌ No se pudo obtener un ACCESS_TOKEN válido. "
+                "Revisá que la variable REFRESH_TOKEN esté configurada en Render."), 401
+
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    # Primero obtengo el usuario para conocer su ID
+    user_response = requests.get("https://api.mercadolibre.com/users/me", headers=headers)
+    if user_response.status_code != 200:
+        return f"❌ Error al obtener datos del usuario:<br>{user_response.text}", 500
+
+    user = user_response.json()
+    user_id = user.get("id")
+
+    # Buscar items del usuario con el criterio
+    search_url = f"https://api.mercadolibre.com/users/{user_id}/items/search"
+    params = {
+        "q": criterio,
+        "limit": 10
+    }
+
+    items_response = requests.get(search_url, headers=headers, params=params)
+    if items_response.status_code != 200:
+        return f"❌ Error al buscar ítems:<br>{items_response.text}", 500
+
+    results = items_response.json().get("results", [])
+
+    # Para cada ID, traigo más info (título, precio, permalink)
+    detalles = []
+    for item_id in results[:10]:
+        item_resp = requests.get(f"https://api.mercadolibre.com/items/{item_id}", headers=headers)
+        if item_resp.status_code == 200:
+            info = item_resp.json()
+            detalles.append({
+                "id": item_id,
+                "title": info.get("title"),
+                "price": info.get("price"),
+                "permalink": info.get("permalink")
+            })
+        else:
+            detalles.append({
+                "id": item_id,
+                "title": "(No se pudo obtener detalle)",
+                "price": None,
+                "permalink": None
+            })
+
+    # Armo HTML simple
+    html = f"""
+    <h2>Resultados de búsqueda para: <em>{criterio}</em></h2>
+    <p>Cuenta conectada: <strong>{user.get('nickname')}</strong> (ID: {user_id})</p>
+    <ul>
+    """
+
+    if detalles:
+        for d in detalles:
+            html += "<li>"
+            html += f"<strong>{d['id']}</strong> - {d.get('title', '')}"
+            if d.get("price") is not None:
+                html += f" - Precio: {d['price']}"
+            if d.get("permalink"):
+                html += f" - <a href='{d['permalink']}' target='_blank'>Ver en MeLi</a>"
+            html += "</li>"
+    else:
+        html += "<li>No se encontraron ítems que coincidan con el criterio.</li>"
+
+    html += """
+    </ul>
+    <br>
+    <a href="/buscar_items">Nueva búsqueda</a> | <a href="/perfil">Volver a /perfil</a>
+    """
+
+    return html
+
+
 # ==========================
 # Ejecutar app localmente
 # ==========================
