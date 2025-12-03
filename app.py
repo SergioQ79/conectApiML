@@ -6,14 +6,13 @@ from dotenv import load_dotenv
 # ==========================
 # Configuración
 # ==========================
-load_dotenv()
+load_dotenv()  # útil en local; en Render se usan las env del panel
 
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 REDIRECT_URI = os.getenv("REDIRECT_URI")
 
-# En Render: seteá estos manualmente después de autorizar
-ACCESS_TOKEN_ENV = os.getenv("ACCESS_TOKEN")
+# Solo usamos REFRESH_TOKEN desde el entorno
 REFRESH_TOKEN_ENV = os.getenv("REFRESH_TOKEN")
 
 app = Flask(__name__)
@@ -22,9 +21,10 @@ app = Flask(__name__)
 # Funciones auxiliares
 # ==========================
 
-def renovar_token():
+def obtener_access_token():
     """
-    Intenta renovar el ACCESS_TOKEN usando el REFRESH_TOKEN
+    Genera SIEMPRE un ACCESS_TOKEN nuevo usando REFRESH_TOKEN_ENV.
+    No usamos ACCESS_TOKEN fijo ni tokens.json.
     """
     if not REFRESH_TOKEN_ENV:
         print("⚠️ REFRESH_TOKEN no definido en entorno.")
@@ -44,17 +44,14 @@ def renovar_token():
         print("❌ Error al renovar el token:", response.text)
         return None
 
-    nuevos_tokens = response.json()
-    print("✅ Token renovado exitosamente.")
-    return nuevos_tokens.get("access_token")
+    tokens = response.json()
+    access_token = tokens.get("access_token")
+    if not access_token:
+        print("❌ No se obtuvo access_token en la respuesta:", tokens)
+        return None
 
-
-def obtener_access_token():
-    """
-    Devuelve un token válido. Primero intenta renovar, si falla usa el fijo de entorno.
-    """
-    nuevo = renovar_token()
-    return nuevo or ACCESS_TOKEN_ENV
+    print("✅ ACCESS_TOKEN generado correctamente desde REFRESH_TOKEN.")
+    return access_token
 
 
 # ==========================
@@ -64,7 +61,7 @@ def obtener_access_token():
 @app.route('/')
 def index():
     auth_url = (
-        f"https://auth.mercadolibre.com.ar/authorization"
+        "https://auth.mercadolibre.com.ar/authorization"
         f"?response_type=code"
         f"&client_id={CLIENT_ID}"
         f"&redirect_uri={REDIRECT_URI}"
@@ -74,6 +71,10 @@ def index():
 
 @app.route("/callback")
 def callback():
+    """
+    Se usa SOLO para la primera autorización.
+    Muestra ACCESS_TOKEN y REFRESH_TOKEN para que el usuario te pase el REFRESH_TOKEN.
+    """
     code = request.args.get('code')
     if not code:
         return "❌ No se recibió código de autorización", 400
@@ -98,24 +99,26 @@ def callback():
 
     return f"""
     ✅ <strong>Autenticación exitosa</strong><br><br>
-    🔐 <strong>ACCESS_TOKEN:</strong><br>
+    🔐 <strong>ACCESS_TOKEN (NO es necesario que lo guardes):</strong><br>
     <code>{access_token}</code><br><br>
-    ♻️ <strong>REFRESH_TOKEN:</strong><br>
+    ♻️ <strong>REFRESH_TOKEN (ESTE SÍ DEBÉS GUARDAR):</strong><br>
     <code>{refresh_token}</code><br><br>
-    👉 Copiá estos valores y agregalos como variables de entorno en Render:<br>
-    <ul>
-        <li><code>ACCESS_TOKEN</code></li>
-        <li><code>REFRESH_TOKEN</code></li>
-    </ul>
-    ⚠️ Una vez hecho eso, reiniciá la app en Render y podés ingresar normalmente a <a href='/perfil'>/perfil</a>.
+    👉 Copiá solo el valor de <strong>REFRESH_TOKEN</strong> y enviáselo al desarrollador.<br>
+    El desarrollador lo guardará en un lugar seguro y lo configurará como variable
+    de entorno <code>REFRESH_TOKEN</code> en Render.<br><br>
+    Luego podrá usar la API de Mercado Libre sin necesidad de que vuelvas a autorizar.
     """
 
 
 @app.route('/perfil')
 def perfil():
+    """
+    Ejemplo de uso de la API con un access_token generado desde el refresh_token.
+    """
     access_token = obtener_access_token()
     if not access_token:
-        return "❌ No se pudo obtener un token válido.", 401
+        return ("❌ No se pudo obtener un ACCESS_TOKEN válido. "
+                "Revisá que la variable REFRESH_TOKEN esté configurada en Render."), 401
 
     headers = {"Authorization": f"Bearer {access_token}"}
 
@@ -126,7 +129,10 @@ def perfil():
     user = user_response.json()
 
     # Obtener publicaciones
-    items_response = requests.get(f"https://api.mercadolibre.com/users/{user['id']}/items/search", headers=headers)
+    items_response = requests.get(
+        f"https://api.mercadolibre.com/users/{user['id']}/items/search",
+        headers=headers
+    )
     items = items_response.json().get("results", []) if items_response.status_code == 200 else []
 
     html = f"""
