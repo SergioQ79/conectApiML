@@ -128,7 +128,7 @@ def perfil():
         return f"❌ Error al obtener datos del usuario:<br>{user_response.text}", 500
     user = user_response.json()
 
-    # Obtener publicaciones
+    # Obtener publicaciones (IDs)
     items_response = requests.get(
         f"https://api.mercadolibre.com/users/{user['id']}/items/search",
         headers=headers
@@ -136,10 +136,17 @@ def perfil():
     items = items_response.json().get("results", []) if items_response.status_code == 200 else []
 
     html = f"""
-    ✅ Bienvenido, <strong>{user.get('nickname')}</strong><br>
-    ID de usuario: {user.get('id')}<br>
-    Tipo de cuenta: {user.get('user_type')}<br><br>
-    <strong>📦 Publicaciones activas:</strong><br>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Perfil Mercado Libre</title>
+    </head>
+    <body>
+        ✅ Bienvenido, <strong>{user.get('nickname')}</strong><br>
+        ID de usuario: {user.get('id')}<br>
+        Tipo de cuenta: {user.get('user_type')}<br><br>
+        <a href="/buscar_items">🔍 Buscar ítems con fotos</a><br><br>
+        <strong>📦 Publicaciones activas (IDs):</strong><br>
     """
     if items:
         for item in items:
@@ -147,6 +154,7 @@ def perfil():
     else:
         html += "No tenés publicaciones activas.<br>"
 
+    html += "</body></html>"
     return html
 
 
@@ -154,21 +162,37 @@ def perfil():
 def buscar_items():
     """
     Busca ítems de la cuenta conectada que coincidan con un criterio 'q'
-    y muestra hasta los primeros 10 con título, precio y link.
+    y muestra hasta los primeros 10 en cards con foto, título, precio y link.
     """
     criterio = request.args.get('q', '').strip()
 
-    # Si no hay criterio, muestro un formulario simple
+    # Si no hay criterio, muestro un formulario simple y prolijo
     if not criterio:
         return """
-        <h2>Buscar items en Mercado Libre</h2>
-        <form method="get" action="/buscar_items">
-            <label>Texto a buscar (en título, etc.):</label><br>
-            <input type="text" name="q" placeholder="Ej: filtro aceite, batería, etc.">
-            <button type="submit">Buscar</button>
-        </form>
-        <br>
-        <a href="/perfil">Volver a /perfil</a>
+        <!doctype html>
+        <html lang="es">
+        <head>
+            <meta charset="utf-8">
+            <title>Buscar ítems</title>
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+        </head>
+        <body class="bg-light">
+            <div class="container py-4">
+                <h2 class="mb-3">Buscar ítems en Mercado Libre</h2>
+                <form method="get" action="/buscar_items" class="row g-2">
+                    <div class="col-auto">
+                        <input type="text" name="q" class="form-control"
+                               placeholder="Ej: batería, filtro, bujía..." required>
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-primary">Buscar</button>
+                    </div>
+                </form>
+                <hr>
+                <a href="/perfil" class="btn btn-link">⬅ Volver a /perfil</a>
+            </div>
+        </body>
+        </html>
         """
 
     access_token = obtener_access_token()
@@ -199,7 +223,7 @@ def buscar_items():
 
     results = items_response.json().get("results", [])
 
-    # Para cada ID, traigo más info (título, precio, permalink)
+    # Para cada ID, traigo más info (título, precio, thumbnail, permalink)
     detalles = []
     for item_id in results[:10]:
         item_resp = requests.get(f"https://api.mercadolibre.com/items/{item_id}", headers=headers)
@@ -209,6 +233,7 @@ def buscar_items():
                 "id": item_id,
                 "title": info.get("title"),
                 "price": info.get("price"),
+                "thumbnail": info.get("thumbnail"),
                 "permalink": info.get("permalink")
             })
         else:
@@ -216,32 +241,64 @@ def buscar_items():
                 "id": item_id,
                 "title": "(No se pudo obtener detalle)",
                 "price": None,
+                "thumbnail": None,
                 "permalink": None
             })
 
-    # Armo HTML simple
+    # Armo HTML con Bootstrap cards
     html = f"""
-    <h2>Resultados de búsqueda para: <em>{criterio}</em></h2>
-    <p>Cuenta conectada: <strong>{user.get('nickname')}</strong> (ID: {user_id})</p>
-    <ul>
+    <!doctype html>
+    <html lang="es">
+    <head>
+        <meta charset="utf-8">
+        <title>Resultados de búsqueda</title>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    </head>
+    <body class="bg-light">
+        <div class="container py-4">
+            <h2 class="mb-3">Resultados de búsqueda para: <em>{criterio}</em></h2>
+            <p>Cuenta conectada: <strong>{user.get('nickname')}</strong> (ID: {user_id})</p>
+            <div class="row g-3">
     """
 
     if detalles:
         for d in detalles:
-            html += "<li>"
-            html += f"<strong>{d['id']}</strong> - {d.get('title', '')}"
-            if d.get("price") is not None:
-                html += f" - Precio: {d['price']}"
-            if d.get("permalink"):
-                html += f" - <a href='{d['permalink']}' target='_blank'>Ver en MeLi</a>"
-            html += "</li>"
+            thumb = d.get("thumbnail") or "https://via.placeholder.com/180x180?text=Sin+Imagen"
+            price = d.get("price")
+            price_txt = f"${price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if price is not None else "N/D"
+            permalink = d.get("permalink") or "#"
+
+            html += f"""
+                <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+                    <div class="card h-100 shadow-sm">
+                        <img src="{thumb}" class="card-img-top" alt="{d.get('title', '')}"
+                             style="object-fit: contain; width: 100%; height: 180px; background-color: #f8f9fa;">
+                        <div class="card-body d-flex flex-column">
+                            <h6 class="card-title" style="min-height: 3em;">{d.get('title', '')}</h6>
+                            <p class="card-text"><strong>{price_txt}</strong></p>
+                            <p class="card-text"><small class="text-muted">ID: {d['id']}</small></p>
+                            <a href="{permalink}" target="_blank" class="btn btn-sm btn-primary mt-auto">
+                                Ver en Mercado Libre
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            """
     else:
-        html += "<li>No se encontraron ítems que coincidan con el criterio.</li>"
+        html += """
+            <div class="col-12">
+                <div class="alert alert-info">No se encontraron ítems que coincidan con el criterio.</div>
+            </div>
+        """
 
     html += """
-    </ul>
-    <br>
-    <a href="/buscar_items">Nueva búsqueda</a> | <a href="/perfil">Volver a /perfil</a>
+            </div> <!-- row -->
+            <hr class="mt-4">
+            <a href="/buscar_items" class="btn btn-secondary">🔎 Nueva búsqueda</a>
+            <a href="/perfil" class="btn btn-link">⬅ Volver a /perfil</a>
+        </div> <!-- container -->
+    </body>
+    </html>
     """
 
     return html
