@@ -314,18 +314,47 @@ def probar_edicion(item_id):
 
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    # Intento de edición en modo seguro (dry-run)
-    url = f"https://api.mercadolibre.com/items/{item_id}?dry_run=true"
-    response = requests.put(url, headers=headers, json={})
+    # 1) Traigo el ítem para saber el precio actual
+    get_url = f"https://api.mercadolibre.com/items/{item_id}"
+    get_resp = requests.get(get_url, headers=headers)
 
-    if response.status_code in (200, 202):
-        return f"✅ Tenés permiso para editar precios del ítem {item_id}. (dry-run OK)"
+    if get_resp.status_code != 200:
+        return f"❌ No se pudo obtener el ítem {item_id}: ({get_resp.status_code})<br>{get_resp.text}"
 
-    elif response.status_code == 403:
-        return f"❌ NO tenés permisos para editar el ítem {item_id}. (403 Forbidden)"
+    item_data = get_resp.json()
 
+    # Tomo un precio "actual" para enviar en el dry_run
+    price = item_data.get("price")
+
+    # Si tiene variaciones, uso el precio de la primera variación
+    if price is None and item_data.get("variations"):
+        first_var = item_data["variations"][0]
+        price = first_var.get("price")
+
+    if price is None:
+        return ("⚠️ No se pudo determinar un precio actual para el ítem, "
+                "pero el token igualmente permite acceder al recurso (GET exitoso).")
+
+    # 2) Hago un PUT en dry_run con el mismo precio
+    put_url = f"https://api.mercadolibre.com/items/{item_id}?dry_run=true"
+    put_body = {"price": price}
+    put_headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+
+    put_resp = requests.put(put_url, headers=put_headers, json=put_body)
+
+    if put_resp.status_code in (200, 202):
+        return (f"✅ Tenés permiso para editar el ítem {item_id}.<br>"
+                f"Dry-run OK enviando el mismo precio actual ({price}).<br>"
+                f"No se modificó nada en Mercado Libre.")
+    elif put_resp.status_code == 403:
+        return f"❌ El token NO tiene permisos para editar el ítem {item_id} (403 Forbidden)."
     else:
-        return f"⚠️ Resultado inesperado ({response.status_code}):<br>{response.text}"
+        return (f"⚠️ Resultado inesperado ({put_resp.status_code}) en el dry-run:<br>"
+                f"{put_resp.text}")
+
 
 
 # ==========================
