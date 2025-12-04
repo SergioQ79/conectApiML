@@ -305,9 +305,33 @@ def buscar_items():
     return html
 
 
+
+@app.route('/probar_edicion/<item_id>')
+def probar_edicion(item_id):
+    access_token = obtener_access_token()
+    if not access_token:
+        return "❌ No se pudo obtener un access token.", 401
+
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    # Intento de edición en modo seguro (dry-run)
+    url = f"https://api.mercadolibre.com/items/{item_id}?dry_run=true"
+    response = requests.put(url, headers=headers, json={})
+
+    if response.status_code in (200, 202):
+        return f"✅ Tenés permiso para editar precios del ítem {item_id}. (dry-run OK)"
+
+    elif response.status_code == 403:
+        return f"❌ NO tenés permisos para editar el ítem {item_id}. (403 Forbidden)"
+
+    else:
+        return f"⚠️ Resultado inesperado ({response.status_code}):<br>{response.text}"
+
+
 # ==========================
 # Ejecutar app localmente
 # ==========================
 if __name__ == '__main__':
     app.run(debug=True)
+
 
