@@ -163,7 +163,7 @@ def perfil():
 def buscar_items():
     """
     Busca ítems de la cuenta conectada que coincidan con un criterio 'q'
-    y muestra hasta los primeros 10 en cards con foto, título, precio y link.
+    y muestra hasta los primeros 10 en cards con foto, título, precio, estado y link.
     """
     criterio = request.args.get('q', '').strip()
 
@@ -224,7 +224,7 @@ def buscar_items():
 
     results = items_response.json().get("results", [])
 
-    # Para cada ID, traigo más info (título, precio, thumbnail, permalink)
+    # Para cada ID, traigo más info (título, precio, thumbnail, permalink, status)
     detalles = []
     for item_id in results[:10]:
         item_resp = requests.get(f"https://api.mercadolibre.com/items/{item_id}", headers=headers)
@@ -235,7 +235,8 @@ def buscar_items():
                 "title": info.get("title"),
                 "price": info.get("price"),
                 "thumbnail": info.get("thumbnail"),
-                "permalink": info.get("permalink")
+                "permalink": info.get("permalink"),
+                "status": info.get("status")  # <-- estado de la publicación
             })
         else:
             detalles.append({
@@ -243,7 +244,8 @@ def buscar_items():
                 "title": "(No se pudo obtener detalle)",
                 "price": None,
                 "thumbnail": None,
-                "permalink": None
+                "permalink": None,
+                "status": None
             })
 
     # Armo HTML con Bootstrap cards
@@ -269,6 +271,16 @@ def buscar_items():
             price_txt = f"${price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if price is not None else "N/D"
             permalink = d.get("permalink") or "#"
 
+            estado = d.get("status") or "desconocido"
+            if estado == "active":
+                badge_class = "success"
+            elif estado == "paused":
+                badge_class = "warning"
+            elif estado == "closed":
+                badge_class = "secondary"
+            else:
+                badge_class = "dark"
+
             html += f"""
                 <div class="col-12 col-sm-6 col-md-4 col-lg-3">
                     <div class="card h-100 shadow-sm">
@@ -277,7 +289,12 @@ def buscar_items():
                         <div class="card-body d-flex flex-column">
                             <h6 class="card-title" style="min-height: 3em;">{d.get('title', '')}</h6>
                             <p class="card-text"><strong>{price_txt}</strong></p>
-                            <p class="card-text"><small class="text-muted">ID: {d['id']}</small></p>
+                            <p class="card-text mb-1">
+                                <small class="text-muted">ID: {d['id']}</small>
+                            </p>
+                            <p class="card-text">
+                                <span class="badge bg-{badge_class}">Estado: {estado}</span>
+                            </p>
                             <a href="{permalink}" target="_blank" class="btn btn-sm btn-primary mt-auto">
                                 Ver en Mercado Libre
                             </a>
@@ -303,6 +320,7 @@ def buscar_items():
     """
 
     return html
+
 
 
 
