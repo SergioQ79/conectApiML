@@ -158,7 +158,6 @@ def perfil():
     html += "</body></html>"
     return html
 
-
 @app.route('/buscar_items')
 def buscar_items():
     """
@@ -236,7 +235,7 @@ def buscar_items():
                 "price": info.get("price"),
                 "thumbnail": info.get("thumbnail"),
                 "permalink": info.get("permalink"),
-                "status": info.get("status")  # <-- estado de la publicación
+                "status": info.get("status"),  # estado de la publicación
             })
         else:
             detalles.append({
@@ -324,6 +323,8 @@ def buscar_items():
 
 
 
+
+
 @app.route('/probar_edicion/<item_id>')
 def probar_edicion(item_id):
     access_token = obtener_access_token()
@@ -380,5 +381,4 @@ def probar_edicion(item_id):
 # ==========================
 if __name__ == '__main__':
     app.run(debug=True)
-
 
