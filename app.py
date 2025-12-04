@@ -1,7 +1,14 @@
 # force redeploy
 import os
 import requests
-from flask import Flask, request, render_template
+from flask import (
+    Flask,
+    request,
+    render_template,
+    session,
+    redirect,
+    url_for
+)
 from dotenv import load_dotenv
 
 # ==========================
@@ -16,7 +23,98 @@ REDIRECT_URI = os.getenv("REDIRECT_URI")
 # Solo usamos REFRESH_TOKEN desde el entorno
 REFRESH_TOKEN_ENV = os.getenv("REFRESH_TOKEN")
 
+# Password global de la app (para login)
+APP_PASSWORD = os.getenv("APP_PASSWORD")
+
 app = Flask(__name__)
+
+# Clave para firmar las cookies de sesión
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret-change-me")
+
+
+# ==========================
+# Autenticación simple global
+# ==========================
+
+@app.before_request
+def require_login():
+    """
+    Fuerza login para toda la app, excepto:
+      - /login  (pantalla de login)
+      - /callback  (callback de Mercado Libre)
+      - /static/...  (archivos estáticos)
+    Si APP_PASSWORD no está definida, no aplica protección (modo desarrollo).
+    """
+    if not APP_PASSWORD:
+        # Si no hay password configurada, no exigimos login
+        return
+
+    path = request.path
+
+    # Rutas exentas de protección
+    if path.startswith("/static"):
+        return
+    if path == "/login":
+        return
+    if path == "/callback":
+        return
+
+    # Si ya está logueado, OK
+    if session.get("logged_in"):
+        return
+
+    # Si no está logueado, redirigimos a /login
+    return redirect(url_for("login", next=path))
+
+
+# ==========================
+# Ruta de Login
+# ==========================
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    """
+    Login muy simple con una sola contraseña global (APP_PASSWORD).
+    Guarda en sesión un flag logged_in = True.
+    """
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        if APP_PASSWORD and password == APP_PASSWORD:
+            session["logged_in"] = True
+            # Si vino con ?next=/algo, lo respetamos
+            next_url = request.args.get("next") or url_for("perfil")
+            return redirect(next_url)
+        else:
+            error = "Contraseña incorrecta"
+    else:
+        error = None
+
+    return f"""
+    <!doctype html>
+    <html lang="es">
+    <head>
+        <meta charset="utf-8">
+        <title>Login - Panel Mercado Libre</title>
+        <link rel="stylesheet"
+              href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    </head>
+    <body class="bg-light">
+        <div class="container py-5" style="max-width: 400px;">
+            <h3 class="mb-4">Acceso al panel de Mercado Libre</h3>
+            <form method="post" class="card card-body shadow-sm">
+                <div class="mb-3">
+                    <label class="form-label">Contraseña</label>
+                    <input type="password" name="password" class="form-control"
+                           autofocus required>
+                </div>
+                {"<div class='alert alert-danger py-2 mb-2'>" + error + "</div>" if error else ""}
+                <button type="submit" class="btn btn-primary w-100">Ingresar</button>
+            </form>
+        </div>
+    </body>
+    </html>
+    """
+
 
 # ==========================
 # Funciones auxiliares
@@ -75,6 +173,7 @@ def callback():
     """
     Se usa SOLO para la primera autorización.
     Muestra ACCESS_TOKEN y REFRESH_TOKEN para que el usuario te pase el REFRESH_TOKEN.
+    Esta ruta está exenta del login en require_login().
     """
     code = request.args.get('code')
     if not code:
@@ -158,6 +257,7 @@ def perfil():
     html += "</body></html>"
     return html
 
+
 @app.route('/buscar_items')
 def buscar_items():
     """
@@ -174,7 +274,8 @@ def buscar_items():
         <head>
             <meta charset="utf-8">
             <title>Buscar ítems</title>
-            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+            <link rel="stylesheet"
+                  href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
         </head>
         <body class="bg-light">
             <div class="container py-4">
@@ -254,7 +355,8 @@ def buscar_items():
     <head>
         <meta charset="utf-8">
         <title>Resultados de búsqueda</title>
-        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+        <link rel="stylesheet"
+              href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
     </head>
     <body class="bg-light">
         <div class="container py-4">
@@ -267,7 +369,10 @@ def buscar_items():
         for d in detalles:
             thumb = d.get("thumbnail") or "https://via.placeholder.com/180x180?text=Sin+Imagen"
             price = d.get("price")
-            price_txt = f"${price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if price is not None else "N/D"
+            price_txt = (
+                f"${price:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                if price is not None else "N/D"
+            )
             permalink = d.get("permalink") or "#"
 
             estado = d.get("status") or "desconocido"
@@ -304,7 +409,9 @@ def buscar_items():
     else:
         html += """
             <div class="col-12">
-                <div class="alert alert-info">No se encontraron ítems que coincidan con el criterio.</div>
+                <div class="alert alert-info">
+                    No se encontraron ítems que coincidan con el criterio.
+                </div>
             </div>
         """
 
@@ -319,10 +426,6 @@ def buscar_items():
     """
 
     return html
-
-
-
-
 
 
 @app.route('/probar_edicion/<item_id>')
@@ -375,10 +478,8 @@ def probar_edicion(item_id):
                 f"{put_resp.text}")
 
 
-
 # ==========================
 # Ejecutar app localmente
 # ==========================
 if __name__ == '__main__':
     app.run(debug=True)
-
